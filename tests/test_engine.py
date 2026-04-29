@@ -156,3 +156,50 @@ def test_score_all_creates_rows_for_every_parcel(db):
     score_all_parcels(db)
     count = db.query(ParcelScore).count()
     assert count == 3
+
+
+# ── Tests: _market_value_percentile ───────────────────────────────────────────
+
+def test_market_value_percentile_returns_50_when_no_sale_price(db):
+    """When last_sale_price is None, _market_value_percentile returns 50.0."""
+    from scoring.engine import _market_value_percentile
+    _add_parcel(db, "P001", last_sale_price=None)
+    assert _market_value_percentile(db, "P001") == 50.0
+
+
+def test_market_value_percentile_returns_50_for_missing_parcel(db):
+    """When the parcel doesn't exist, _market_value_percentile returns 50.0."""
+    from scoring.engine import _market_value_percentile
+    assert _market_value_percentile(db, "NONEXISTENT") == 50.0
+
+
+def test_market_value_percentile_single_parcel_is_zero(db):
+    """A single parcel has 0 parcels below it, so percentile = 0."""
+    from scoring.engine import _market_value_percentile
+    _add_parcel(db, "ONLY", last_sale_price=200_000)
+    assert _market_value_percentile(db, "ONLY") == 0.0
+
+
+def test_market_value_percentile_highest_price_scores_highest(db):
+    """The parcel with the highest sale price has the most parcels below it."""
+    from scoring.engine import _market_value_percentile
+    _add_parcel(db, "LOW",  last_sale_price=100_000)
+    _add_parcel(db, "MID",  last_sale_price=300_000)
+    _add_parcel(db, "HIGH", last_sale_price=500_000)
+
+    low_pct  = _market_value_percentile(db, "LOW")
+    mid_pct  = _market_value_percentile(db, "MID")
+    high_pct = _market_value_percentile(db, "HIGH")
+
+    assert low_pct < mid_pct < high_pct
+
+
+def test_score_parcel_vgd_higher_for_higher_sale_price(db):
+    """Higher sale price → higher market percentile → higher VGD score."""
+    _add_parcel(db, "LOW",  last_sale_price=100_000)
+    _add_parcel(db, "HIGH", last_sale_price=500_000)
+
+    low_result  = score_parcel(db, "LOW")
+    high_result = score_parcel(db, "HIGH")
+
+    assert high_result.vgd > low_result.vgd

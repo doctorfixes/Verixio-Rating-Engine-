@@ -165,3 +165,109 @@ def test_multiple_categories_create_multiple_alerts(db):
     assert count == 3
     types = {a.change_type for a in db.query(ChangeRadar).all()}
     assert types == {"new_permit", "zoning_change", "environmental_notice"}
+
+
+# ── Tests: _avg_30d ────────────────────────────────────────────────────────────
+
+def test_avg_30d_no_events_returns_zero(db):
+    from change_radar.radar import _avg_30d
+    _add_parcel(db)
+    assert _avg_30d(db, "P001", "311_complaint") == 0.0
+
+
+def test_avg_30d_with_events_in_window(db):
+    from change_radar.radar import _avg_30d
+    _add_parcel(db)
+    # Add 30 events spread across the 30-day window (days -1 to -30)
+    for days_ago in range(1, 31):
+        _add_event(
+            db,
+            "311_complaint",
+            event_date=date.today() - timedelta(days=days_ago),
+        )
+    result = _avg_30d(db, "P001", "311_complaint")
+    assert result == 1.0  # 30 events / 30 days
+
+
+def test_avg_30d_excludes_today(db):
+    from change_radar.radar import _avg_30d
+    _add_parcel(db)
+    # Only an event from today — should NOT be in the window
+    _add_event(db, "311_complaint", event_date=date.today())
+    assert _avg_30d(db, "P001", "311_complaint") == 0.0
+
+
+def test_avg_30d_excludes_old_events(db):
+    from change_radar.radar import _avg_30d
+    _add_parcel(db)
+    # Event older than 31 days — falls outside the window
+    _add_event(
+        db,
+        "311_complaint",
+        event_date=date.today() - timedelta(days=32),
+    )
+    assert _avg_30d(db, "P001", "311_complaint") == 0.0
+
+
+# ── Tests: 311 spike ───────────────────────────────────────────────────────────
+
+def test_311_spike_triggers_alert(db):
+    """A 311 spike (today_count > 2 × 30-day avg) should emit a 311_spike alert."""
+    _add_parcel(db)
+    # Establish a 30-day baseline: 1 event/day (avg = 1.0)
+    for days_ago in range(1, 31):
+        _add_event(
+            db,
+            "311_complaint",
+            event_date=date.today() - timedelta(days=days_ago),
+        )
+    # Add 3 complaints today via recent created_at (today_count=3 > 2*1.0=2)
+    for _ in range(3):
+        _add_event(
+            db,
+            "311_complaint",
+            event_date=date.today(),
+            created_at=_recent_created_at(),
+        )
+
+    count = run_change_radar(db)
+    assert count >= 1
+    alert = db.query(ChangeRadar).filter_by(change_type="311_spike").first()
+    assert alert is not None
+    assert alert.parcel_id == "P001"
+
+
+def test_311_no_spike_when_avg_is_zero(db):
+    """Without a historical baseline, no spike alert should be generated."""
+    _add_parcel(db)
+    _add_event(
+        db,
+        "311_complaint",
+        event_date=date.today(),
+        created_at=_recent_created_at(),
+    )
+    count = run_change_radar(db)
+    assert count == 0
+    assert db.query(ChangeRadar).filter_by(change_type="311_spike").count() == 0
+
+
+def test_311_no_spike_when_below_threshold(db):
+    """today_count <= 2 * avg should NOT produce a spike alert."""
+    _add_parcel(db)
+    # Baseline: 30 events in 30 days → avg = 1.0
+    for days_ago in range(1, 31):
+        _add_event(
+            db,
+            "311_complaint",
+            event_date=date.today() - timedelta(days=days_ago),
+        )
+    # Today: 2 events (exactly at threshold, not exceeding it)
+    for _ in range(2):
+        _add_event(
+            db,
+            "311_complaint",
+            event_date=date.today(),
+            created_at=_recent_created_at(),
+        )
+    run_change_radar(db)
+    assert db.query(ChangeRadar).filter_by(change_type="311_spike").count() == 0
