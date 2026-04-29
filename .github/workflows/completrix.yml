@@ -1,0 +1,12 @@
+name: Completrix Governance Check
+on: pull_request
+
+jobs:
+  governance:
+    name: Completrix System Compiler
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: doctorfixes/completrix-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
