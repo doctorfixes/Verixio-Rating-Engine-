@@ -19,6 +19,7 @@ from change_radar.radar import run_change_radar
 from ingestion.complaints import Complaints311Ingester
 from ingestion.crime import CrimeIngester
 from ingestion.environmental import EnvironmentalIngester
+from ingestion.parcel_seed import ParcelSeeder
 from ingestion.permits import PermitsIngester
 from scoring.engine import score_all_parcels
 
@@ -31,6 +32,15 @@ INGESTERS = {
     "crime": CrimeIngester,
     "environmental": EnvironmentalIngester,
 }
+
+
+def cmd_seed() -> None:
+    db = SessionLocal()
+    try:
+        n = ParcelSeeder(db).run()
+        logger.info("Seeded %d parcels", n)
+    finally:
+        db.close()
 
 
 def cmd_ingest(target: str | None = None) -> None:
@@ -75,13 +85,16 @@ def main() -> None:
         help="Ingest a specific source (default: all)",
     )
 
+    sub.add_parser("seed", help="Seed parcels from Denver Real Property Valuations")
     sub.add_parser("score", help="Score all parcels")
     sub.add_parser("radar", help="Run Change Radar")
-    sub.add_parser("all", help="Ingest → score → radar")
+    sub.add_parser("all", help="Ingest → score → radar (run 'seed' first on a fresh DB)")
 
     args = parser.parse_args()
 
-    if args.command == "ingest":
+    if args.command == "seed":
+        cmd_seed()
+    elif args.command == "ingest":
         cmd_ingest(getattr(args, "source", None))
     elif args.command == "score":
         cmd_score()

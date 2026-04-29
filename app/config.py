@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     environmental_url: str = (
         "https://data.denvergov.org/resource/b2jg-d77q.json"
     )
+    # Denver Real Property Valuations — used by the parcel seeder
+    parcel_seed_url: str = (
+        "https://data.denvergov.org/resource/dn8v-f35q.json"
+    )
 
 
 settings = Settings()

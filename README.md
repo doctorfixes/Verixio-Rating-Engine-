@@ -30,6 +30,10 @@ via a Change Radar.
 
 ```
 .
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                # Run tests on every push/PR
+│       └── scheduled-jobs.yml    # Automated pipeline (every 6 hours)
 ├── app/
 │   ├── main.py          # FastAPI app + static UI mount
 │   ├── config.py        # Pydantic settings (reads .env)
@@ -44,6 +48,7 @@ via a Change Radar.
 │   └── radar.py         # Change Radar detection logic
 ├── ingestion/
 │   ├── base.py          # BaseIngester (Socrata pagination)
+│   ├── parcel_seed.py   # Denver Real Property Valuations → parcels table
 │   ├── permits.py       # Denver building permits
 │   ├── complaints.py    # Denver 311 service requests
 │   ├── crime.py         # Denver crime incidents
@@ -58,8 +63,9 @@ via a Change Radar.
 │   └── index.html       # Single-page parcel lookup UI
 ├── Dockerfile
 ├── docker-compose.yml
+├── railway.toml         # Railway cloud deployment config
 ├── requirements.txt
-└── run.py               # CLI: ingest / score / radar / all
+└── run.py               # CLI: seed / ingest / score / radar / all
 ```
 
 ---
@@ -81,6 +87,7 @@ docker compose up --build
 
 This starts a local Postgres instance (port 5432), applies the schema
 automatically via the Docker entrypoint, and launches the API on port 8000.
+The API waits for Postgres to pass a health check before starting.
 
 ### 3 — Or run locally with a Postgres/Supabase URL
 
@@ -94,9 +101,12 @@ uvicorn app.main:app --reload
 
 ---
 
-## CLI — Ingestion, Scoring & Radar
+## CLI — Seed, Ingest, Score & Radar
 
 ```bash
+# Seed the parcels table from Denver Real Property Valuations (run once first)
+python run.py seed
+
 # Ingest all four Denver datasets
 python run.py ingest
 
@@ -115,6 +125,12 @@ python run.py radar
 # Full pipeline: ingest → score → radar
 python run.py all
 ```
+
+> **Recommended first-time flow:**
+> ```bash
+> python run.py seed    # populate parcels table
+> python run.py all     # ingest → score → radar
+> ```
 
 ---
 
@@ -179,6 +195,7 @@ Full DDL: [`migrations/001_init.sql`](migrations/001_init.sql)
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgresql://user:password@localhost:5432/verixio` | Postgres connection string |
 | `DENVER_OPEN_DATA_APP_TOKEN` | *(empty)* | Optional Socrata app token for higher rate limits |
+| `PARCEL_SEED_URL` | Denver Real Property Valuations endpoint | Override parcel seed data source |
 
 ---
 
@@ -198,12 +215,32 @@ The suite uses an in-memory SQLite database and covers:
 
 ## Deployment
 
-### Railway / Render / Fly.io
+### Railway (recommended)
 
-1. Push the repo and link it in your hosting dashboard.
-2. Set the `DATABASE_URL` environment variable to your managed Postgres instance.
-3. Apply the schema once: `psql "$DATABASE_URL" -f migrations/001_init.sql`
-4. The service starts with: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+1. Push the repo to GitHub and connect it at [railway.app](https://railway.app).
+2. Add a **Postgres** plugin — Railway sets `DATABASE_URL` automatically.
+3. Set `DENVER_OPEN_DATA_APP_TOKEN` in the Railway environment (optional but recommended).
+4. The `railway.toml` at the repo root configures the build and start command.
+5. Apply the schema once via the Railway shell or a one-off job:
+   ```bash
+   psql "$DATABASE_URL" -f migrations/001_init.sql
+   ```
+6. The API and UI are now live at your Railway public URL.
+
+### Render
+
+1. Create a **Web Service** pointing at this repo.
+2. Build command: `pip install -r requirements.txt`
+3. Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+4. Add a **Postgres** database and set `DATABASE_URL`.
+
+### Fly.io
+
+```bash
+fly launch        # generates fly.toml
+fly secrets set DATABASE_URL="..."
+fly deploy
+```
 
 ### Docker
 
@@ -211,4 +248,27 @@ The suite uses an in-memory SQLite database and covers:
 docker build -t verixio-vre .
 docker run -e DATABASE_URL="..." -p 8000:8000 verixio-vre
 ```
+
+---
+
+## Automated Jobs (CI/CD)
+
+Two GitHub Actions workflows are included:
+
+### `.github/workflows/ci.yml` — Continuous Integration
+
+Runs the full test suite on every push and pull request.
+
+### `.github/workflows/scheduled-jobs.yml` — Scheduled Pipeline
+
+Runs `python run.py all` (ingest → score → radar) every 6 hours.
+
+**Required GitHub secrets:**
+
+| Secret | Description |
+|--------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string for your production database |
+| `DENVER_OPEN_DATA_APP_TOKEN` | *(optional)* Socrata app token for higher rate limits |
+
+You can also trigger the pipeline manually from the **Actions** tab with a custom command (`seed`, `ingest`, `score`, `radar`, or `all`).
 
