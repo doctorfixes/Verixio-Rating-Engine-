@@ -478,7 +478,7 @@ def test_parse_empty_pin_returns_none():
     assert _parse({"pin": "   "}) is None
 
 
-def test_parse_address_fallback_field(dummy=None):
+def test_parse_address_fallback_field():
     record = {"pin": "P002", "situs_street_address": "200 Oak Ave"}
     result = _parse(record)
     assert result is not None
