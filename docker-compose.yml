@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: verixio
+      POSTGRES_PASSWORD: verixio
+      POSTGRES_DB: verixio
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://verixio:verixio@db:5432/verixio
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  pgdata:
