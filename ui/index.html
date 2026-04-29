@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verixio Rating Engine</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #58a6ff;
+      letter-spacing: 0.04em;
+    }
+
+    header p {
+      margin-top: 0.4rem;
+      font-size: 0.9rem;
+      color: #8b949e;
+    }
+
+    .search-bar {
+      display: flex;
+      gap: 0.5rem;
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 2rem;
+    }
+
+    .search-bar input {
+      flex: 1;
+      padding: 0.6rem 1rem;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    .search-bar input:focus {
+      border-color: #58a6ff;
+    }
+
+    .search-bar button {
+      padding: 0.6rem 1.4rem;
+      border-radius: 6px;
+      border: none;
+      background: #238636;
+      color: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .search-bar button:hover { background: #2ea043; }
+    .search-bar button:disabled { background: #30363d; cursor: not-allowed; }
+
+    #error-msg {
+      color: #f85149;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .results {
+      width: 100%;
+      max-width: 900px;
+      display: none;
+    }
+
+    .parcel-header {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.2rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .parcel-header h2 {
+      font-size: 1.1rem;
+      color: #58a6ff;
+      margin-bottom: 0.4rem;
+    }
+
+    .parcel-header .meta {
+      font-size: 0.85rem;
+      color: #8b949e;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .scores-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .score-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .score-card .label {
+      font-size: 0.75rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.5rem;
+    }
+
+    .score-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .good    { color: #3fb950; }
+    .warn    { color: #d29922; }
+    .bad     { color: #f85149; }
+    .primary { color: #58a6ff; }
+    .neutral { color: #e6edf3; }
+
+    .section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+
+    .section-header {
+      padding: 0.75rem 1.2rem;
+      background: #1c2128;
+      border-bottom: 1px solid #30363d;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th {
+      padding: 0.5rem 1.2rem;
+      text-align: left;
+      color: #8b949e;
+      font-weight: 600;
+      border-bottom: 1px solid #21262d;
+    }
+
+    td {
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #21262d;
+      color: #e6edf3;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-permit              { background: #1f3e5a; color: #79c0ff; }
+    .badge-311_complaint       { background: #3d2b00; color: #f0a30a; }
+    .badge-crime               { background: #3d0000; color: #ff7b72; }
+    .badge-zoning_change       { background: #1b3a2d; color: #56d364; }
+    .badge-environmental       { background: #2d2000; color: #d29922; }
+    .badge-new_permit          { background: #1f3e5a; color: #79c0ff; }
+    .badge-311_spike           { background: #3d2b00; color: #f0a30a; }
+    .badge-environmental_notice { background: #2d2000; color: #d29922; }
+    .badge-default             { background: #30363d; color: #8b949e; }
+
+    .empty-state {
+      padding: 1.5rem;
+      text-align: center;
+      color: #8b949e;
+      font-size: 0.9rem;
+    }
+
+    .spinner {
+      display: none;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #30363d;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏙️ Verixio Rating Engine</h1>
+    <p>Denver parcel intelligence — NTS · TCS · VGD</p>
+  </header>
+
+  <div class="search-bar">
+    <input id="query-input" type="text" placeholder="Enter parcel ID (e.g. P001)" />
+    <button id="search-btn" onclick="lookup()">Lookup</button>
+  </div>
+
+  <div class="spinner" id="spinner"></div>
+  <div id="error-msg"></div>
+
+  <div class="results" id="results">
+    <!-- Parcel header -->
+    <div class="parcel-header">
+      <h2 id="parcel-id-display"></h2>
+      <div class="meta" id="parcel-meta"></div>
+    </div>
+
+    <!-- Score cards -->
+    <div class="scores-grid" id="scores-grid"></div>
+
+    <!-- Recent Events -->
+    <div class="section">
+      <div class="section-header">Recent Events</div>
+      <div id="events-body"></div>
+    </div>
+
+    <!-- Change Radar -->
+    <div class="section">
+      <div class="section-header">🔔 Change Radar Alerts</div>
+      <div id="changes-body"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = window.location.origin;
+
+    function scoreColor(value) {
+      if (value === null || value === undefined) return "neutral";
+      if (value >= 70) return "good";
+      if (value >= 40) return "warn";
+      return "bad";
+    }
+
+    function vgdColor(value) {
+      if (value === null || value === undefined) return "neutral";
+      if (value >= 10) return "good";
+      if (value <= -10) return "bad";
+      return "warn";
+    }
+
+    function fmt(v) { return (v !== null && v !== undefined) ? v : "—"; }
+
+    function badgeClass(cat) {
+      const known = [
+        "permit", "311_complaint", "crime", "zoning_change", "environmental",
+        "new_permit", "311_spike", "environmental_notice",
+      ];
+      return known.includes(cat) ? `badge-${cat}` : "badge-default";
+    }
+
+    async function lookup() {
+      const raw = document.getElementById("query-input").value.trim();
+      if (!raw) return;
+
+      const errEl = document.getElementById("error-msg");
+      const resultsEl = document.getElementById("results");
+      const spinner = document.getElementById("spinner");
+      const btn = document.getElementById("search-btn");
+
+      errEl.style.display = "none";
+      resultsEl.style.display = "none";
+      spinner.style.display = "block";
+      btn.disabled = true;
+
+      try {
+        const id = encodeURIComponent(raw);
+        const [parcelRes, scoresRes, eventsRes, changesRes] = await Promise.all([
+          fetch(`${API}/parcel/${id}`),
+          fetch(`${API}/parcel/${id}/scores`),
+          fetch(`${API}/parcel/${id}/events`),
+          fetch(`${API}/parcel/${id}/changes`),
+        ]);
+
+        if (!parcelRes.ok) {
+          throw new Error(
+            parcelRes.status === 404
+              ? `Parcel "${raw}" not found.`
+              : `Server error ${parcelRes.status}`
+          );
+        }
+
+        const parcel  = await parcelRes.json();
+        const scores  = scoresRes.ok  ? await scoresRes.json()  : null;
+        const events  = eventsRes.ok  ? await eventsRes.json()  : [];
+        const changes = changesRes.ok ? await changesRes.json() : [];
+
+        renderParcel(parcel);
+        renderScores(scores);
+        renderEvents(events);
+        renderChanges(changes);
+
+        resultsEl.style.display = "block";
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = "block";
+      } finally {
+        spinner.style.display = "none";
+        btn.disabled = false;
+      }
+    }
+
+    function renderParcel(p) {
+      document.getElementById("parcel-id-display").textContent = `Parcel: ${p.parcel_id}`;
+      const parts = [];
+      if (p.address)        parts.push(`📍 ${p.address}`);
+      if (p.neighborhood)   parts.push(`🏘️ ${p.neighborhood}`);
+      if (p.assessor_value) parts.push(`🏷️ Assessed: $${Number(p.assessor_value).toLocaleString()}`);
+      if (p.last_sale_price) parts.push(`💰 Last sale: $${Number(p.last_sale_price).toLocaleString()}`);
+      if (p.last_sale_date)  parts.push(`📅 ${p.last_sale_date}`);
+      document.getElementById("parcel-meta").innerHTML =
+        parts.map(x => `<span>${x}</span>`).join("") || "<span>No metadata available</span>";
+    }
+
+    function renderScores(s) {
+      const grid = document.getElementById("scores-grid");
+      if (!s) {
+        grid.innerHTML = `
+          <div class="score-card">
+            <div class="label">Scores</div>
+            <div class="value neutral" style="font-size:1rem;line-height:1.4">Not yet<br>scored</div>
+          </div>`;
+        return;
+      }
+
+      const cards = [
+        { label: "NTS",          value: s.nts,                 color: scoreColor(s.nts),                cls: "primary" },
+        { label: "TCS",          value: s.tcs,                 color: scoreColor(s.tcs),                cls: "primary" },
+        { label: "VGD",          value: s.vgd,                 color: vgdColor(s.vgd),                  cls: "" },
+        { label: "Permit",       value: s.permit_score,        color: scoreColor(s.permit_score),        cls: "" },
+        { label: "Zoning",       value: s.zoning_score,        color: scoreColor(s.zoning_score),        cls: "" },
+        { label: "Friction",     value: s.friction_score,      color: scoreColor(s.friction_score),      cls: "" },
+        { label: "Crime",        value: s.crime_score,         color: scoreColor(s.crime_score),         cls: "" },
+        { label: "Environment",  value: s.environmental_score, color: scoreColor(s.environmental_score), cls: "" },
+      ];
+
+      grid.innerHTML = cards.map(c => `
+        <div class="score-card">
+          <div class="label">${c.label}</div>
+          <div class="value ${c.cls || c.color}">${fmt(c.value)}</div>
+        </div>`).join("");
+    }
+
+    function renderEvents(events) {
+      const el = document.getElementById("events-body");
+      if (!events.length) {
+        el.innerHTML = `<div class="empty-state">No events recorded for this parcel.</div>`;
+        return;
+      }
+      const rows = events.slice(0, 50).map(e => `
+        <tr>
+          <td>${e.event_date || "—"}</td>
+          <td><span class="badge ${badgeClass(e.category)}">${e.category || "—"}</span></td>
+          <td>${e.source || "—"}</td>
+          <td>${fmt(e.severity)}</td>
+        </tr>`).join("");
+      el.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Category</th><th>Source</th><th>Severity</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    function renderChanges(changes) {
+      const el = document.getElementById("changes-body");
+      if (!changes.length) {
+        el.innerHTML = `<div class="empty-state">No Change Radar alerts for this parcel.</div>`;
+        return;
+      }
+      const rows = changes.map(c => `
+        <tr>
+          <td>${c.event_date || "—"}</td>
+          <td><span class="badge ${badgeClass(c.change_type)}">${c.change_type || "—"}</span></td>
+          <td>${c.description || "—"}</td>
+        </tr>`).join("");
+      el.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Type</th><th>Description</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    document.getElementById("query-input").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") lookup();
+    });
+  </script>
+</body>
+</html>
